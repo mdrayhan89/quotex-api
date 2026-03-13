@@ -1,9 +1,37 @@
 import requests
 from flask import Flask, jsonify, request
+from collections import OrderedDict
 
 app = Flask(__name__)
 
-QUOTEX_SOURCE = "https://mrbeaxt.site/Qx/Qx.php"
+# JSON কি-গুলোর সিরিয়াল ঠিক রাখার জন্য এই ফাংশন
+def format_candle(item, pair):
+    # কালার লজিক ঠিক করা
+    open_price = float(item.get("open", 0))
+    close_price = float(item.get("close", 0))
+    
+    if close_price > open_price:
+        color = "green"
+    elif close_price < open_price:
+        color = "red"
+    else:
+        color = "doji"
+
+    # তোমার ১ নম্বর ছবির সিরিয়াল অনুযায়ী সাজানো
+    candle = OrderedDict([
+        ("id", str(item.get("id"))),
+        ("pair", pair),
+        ("timeframe", item.get("timeframe", "M1")),
+        ("candle_time", item.get("candle_time")),
+        ("open", str(item.get("open"))),
+        ("high", str(item.get("high"))),
+        ("low", str(item.get("low"))),
+        ("close", str(item.get("close"))),
+        ("volume", str(item.get("volume"))),
+        ("color", color),
+        ("created_at", item.get("created_at"))
+    ])
+    return candle
 
 @app.route('/')
 def get_quotex_data():
@@ -18,34 +46,28 @@ def get_quotex_data():
         })
 
     try:
-        response = requests.get(f"{QUOTEX_SOURCE}?pair={pair}&count={count}", timeout=10)
+        # সোর্স থেকে ডাটা আনা
+        source_url = f"https://mrbeaxt.site/Qx/Qx.php?pair={pair}&count={count}"
+        response = requests.get(source_url, timeout=10)
         source_data = response.json()
 
         final_data = []
         if "data" in source_data:
             for item in source_data["data"]:
-                final_data.append({
-                    "id": item.get("id"),
-                    "pair": pair,
-                    "timeframe": item.get("timeframe", "M1"),
-                    "candle_time": item.get("candle_time"),
-                    "open": item.get("open"),
-                    "high": item.get("high"),
-                    "low": item.get("low"),
-                    "close": item.get("close"),
-                    "volume": item.get("volume"),
-                    "color": item.get("color"),
-                    "created_at": item.get("created_at")
-                })
+                formatted_item = format_candle(item, pair)
+                final_data.append(formatted_item)
 
-        return jsonify({
-            "Owner_Developer": "DARK-X-RAYHAN",
-            "Telegram": "@mdrayhan85",
-            "Channel": "https://t.me/mdrayhan85",
-            "success": True,
-            "count": len(final_data),
-            "data": final_data
-        })
+        # ফাইনাল আউটপুট সাজানো
+        output = OrderedDict([
+            ("Owner_Developer", "DARK-X-RAYHAN"),
+            ("Telegram", "@mdrayhan85"),
+            ("Channel", "https://t.me/mdrayhan85"),
+            ("success", True),
+            ("count", len(final_data)),
+            ("data", final_data)
+        ])
+
+        return jsonify(output)
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
