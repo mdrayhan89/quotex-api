@@ -5,22 +5,35 @@ from collections import OrderedDict
 
 app = Flask(__name__)
 
-# এটি কোটেক্সের সিকিউরিটি বাইপাস করতে সাহায্য করবে
-scraper = cloudscraper.create_scraper()
+# বাইপাস করার জন্য স্ক্র্যাপার সেটআপ
+scraper = cloudscraper.create_scraper(
+    browser={
+        'browser': 'chrome',
+        'platform': 'windows',
+        'desktop': True
+    }
+)
 
 @app.route('/')
-def get_data():
+def main_api():
     pair = request.args.get('pair', default='USDBDT_otc')
     count = request.args.get('count', default=10, type=int)
     
-    # পেয়ার ফরম্যাট ঠিক করা
+    # শুধু পেয়ারের নাম নেওয়া (যেমন: USDBDT)
     symbol = pair.split('_')[0].upper()
-    target_url = f"https://k-line.quotex.io/api/v1/candles?pair={symbol}&count={count}&timeframe=60"
+    
+    # বিকল্প এপিআই এন্ডপয়েন্ট (এটি ট্রাই করুন)
+    target_url = f"https://qxbroker.com/api/v1/candles?pair={symbol}&count={count}&timeframe=60"
 
     try:
-        response = scraper.get(target_url, timeout=15)
+        response = scraper.get(target_url, timeout=20)
+        
         if response.status_code != 200:
-            return jsonify({"success": False, "error": "Quotex blocked direct access"})
+            return jsonify({
+                "success": False, 
+                "error": f"Server status {response.status_code}",
+                "msg": "Quotex is blocking this IP"
+            })
             
         candles = response.json()
         final_data = []
@@ -29,7 +42,6 @@ def get_data():
             for i, c in enumerate(candles):
                 o, cl = float(c['open']), float(c['close'])
                 color = "green" if cl > o else "red" if cl < o else "doji"
-                c_time = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(c['time']))
                 
                 item = OrderedDict([
                     ("id", str(i + 1)),
@@ -39,14 +51,13 @@ def get_data():
                     ("low", str(c['low'])),
                     ("close", str(cl)),
                     ("color", color),
-                    ("time", c_time)
+                    ("time", time.strftime('%H:%M:%S', time.gmtime(c['time'])))
                 ])
                 final_data.append(item)
 
         return jsonify(OrderedDict([
             ("Owner_Developer", "DARK-X-RAYHAN"),
             ("success", True if final_data else False),
-            ("count", len(final_data)),
             ("data", final_data)
         ]))
 
