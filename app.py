@@ -1,54 +1,64 @@
-import requests
+import cloudscraper
 import time
 from flask import Flask, jsonify, request
 from collections import OrderedDict
 
 app = Flask(__name__)
 
-# আপনার সক্রিয় ক্লাউডফ্লেয়ার লিঙ্ক
-CLOUDFLARE_WORKER_URL = "https://quotex-data-bridge.islamrabby655.workers.dev"
+def fetch_quotex_data(pair, count):
+    # কারেন্সি ফরম্যাট ঠিক করা
+    symbol = pair.split('_')[0].upper()
+    url = f"https://k-line.quotex.io/api/v1/candles?pair={symbol}&count={count}&timeframe=60"
+    
+    # এটি ব্রাউজারের মতো অভিনয় করে ডাটা নিয়ে আসবে
+    scraper = cloudscraper.create_scraper()
+    
+    try:
+        response = scraper.get(url, timeout=15)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception:
+        return None
 
 @app.route('/')
-def get_data():
+def api_response():
     pair = request.args.get('pair', default='USDBDT_otc')
     count = request.args.get('count', default=10, type=int)
 
-    try:
-        # ক্লাউডফ্লেয়ার থেকে ডাটা আনা হচ্ছে
-        worker_res = requests.get(f"{CLOUDFLARE_WORKER_URL}/?pair={pair}&count={count}", timeout=15)
-        raw_candles = worker_res.json()
-        
-        final_data = []
-        if isinstance(raw_candles, list):
-            for i, c in enumerate(raw_candles):
-                o, cl = float(c['open']), float(c['close'])
-                color = "green" if cl > o else "red" if cl < o else "doji"
-                c_time = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(c['time']))
-                
-                item = OrderedDict([
-                    ("id", str(i + 1)),
-                    ("pair", pair),
-                    ("timeframe", "M1"),
-                    ("candle_time", c_time),
-                    ("open", str(o)),
-                    ("high", str(c['high'])),
-                    ("low", str(c['low'])),
-                    ("close", str(cl)),
-                    ("volume", str(c.get('v', 0))),
-                    ("color", color),
-                    ("created_at", c_time)
-                ])
-                final_data.append(item)
+    candles = fetch_quotex_data(pair, count)
+    
+    if not candles:
+        return jsonify({
+            "Owner_Developer": "DARK-X-RAYHAN",
+            "success": False,
+            "message": "Data Source Blocked or Invalid Pair"
+        })
 
-        return jsonify(OrderedDict([
-            ("Owner_Developer", "DARK-X-RAYHAN"),
-            ("Telegram", "@mdrayhan85"),
-            ("success", True if final_data else False),
-            ("count", len(final_data)),
-            ("data", final_data)
-        ]))
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    final_data = []
+    for i, c in enumerate(candles):
+        o, cl = float(c['open']), float(c['close'])
+        color = "green" if cl > o else "red" if cl < o else "doji"
+        timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(c['time']))
+        
+        item = OrderedDict([
+            ("id", str(i + 1)),
+            ("pair", pair),
+            ("open", str(o)),
+            ("high", str(c['high'])),
+            ("low", str(c['low'])),
+            ("close", str(cl)),
+            ("color", color),
+            ("candle_time", timestamp)
+        ])
+        final_data.append(item)
+
+    return jsonify(OrderedDict([
+        ("Owner_Developer", "DARK-X-RAYHAN"),
+        ("success": True),
+        ("count", len(final_data)),
+        ("data", final_data)
+    ]))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
