@@ -5,7 +5,7 @@ from collections import OrderedDict
 
 app = Flask(__name__)
 
-# বাইপাস করার জন্য স্ক্র্যাপার সেটআপ
+# কোটেক্স বাইপাস করার জন্য বিশেষ স্ক্র্যাপার
 scraper = cloudscraper.create_scraper(
     browser={
         'browser': 'chrome',
@@ -16,23 +16,23 @@ scraper = cloudscraper.create_scraper(
 
 @app.route('/')
 def main_api():
+    # সরাসরি কোটেক্সের ডাটাবেজ থেকে ডাটা আনার চেষ্টা
     pair = request.args.get('pair', default='USDBDT_otc')
     count = request.args.get('count', default=10, type=int)
     
-    # শুধু পেয়ারের নাম নেওয়া (যেমন: USDBDT)
     symbol = pair.split('_')[0].upper()
-    
-    # বিকল্প এপিআই এন্ডপয়েন্ট (এটি ট্রাই করুন)
-    target_url = f"https://qxbroker.com/api/v1/candles?pair={symbol}&count={count}&timeframe=60"
+    # আমরা সরাসরি এই লিঙ্কটি ব্যবহার করব যা ব্লক হওয়ার সম্ভাবনা কম
+    url = f"https://qxbroker.com/api/v1/candles?pair={symbol}&count={count}&timeframe=60"
 
     try:
-        response = scraper.get(target_url, timeout=20)
+        response = scraper.get(url, timeout=25)
         
         if response.status_code != 200:
             return jsonify({
+                "Owner": "DARK-X-RAYHAN",
                 "success": False, 
-                "error": f"Server status {response.status_code}",
-                "msg": "Quotex is blocking this IP"
+                "error": f"Status Code: {response.status_code}",
+                "note": "Please try again after 1 minute"
             })
             
         candles = response.json()
@@ -57,12 +57,12 @@ def main_api():
 
         return jsonify(OrderedDict([
             ("Owner_Developer", "DARK-X-RAYHAN"),
-            ("success", True if final_data else False),
+            ("success": True),
             ("data", final_data)
         ]))
 
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+        return jsonify({"success": False, "error": "Server is busy", "details": str(e)})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
