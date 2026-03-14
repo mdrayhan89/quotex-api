@@ -1,76 +1,72 @@
+import time
+import json
 import requests
 from flask import Flask, jsonify, request
 from collections import OrderedDict
 
 app = Flask(__name__)
 
-# JSON কি-গুলোর সিরিয়াল ঠিক রাখার জন্য এই ফাংশন
-def format_candle(item, pair):
-    # কালার লজিক ঠিক করা
-    open_price = float(item.get("open", 0))
-    close_price = float(item.get("close", 0))
+# সরাসরি Quotex থেকে ডাটা আনার ফাংশন
+def get_realtime_candles(pair, count):
+    # Quotex-এর ডাটা প্রোভাইডার সোর্স (উদাহরণস্বরূপ একটি স্টেবল সোর্স ব্যবহার করা হয়েছে)
+    # সরাসরি ব্রোকার থেকে ডাটা ফেচ করার লজিক
+    url = f"https://k-line.quotex.io/api/v1/candles?pair={pair.replace('_otc', '').upper()}&count={count}&timeframe=60"
     
-    if close_price > open_price:
-        color = "green"
-    elif close_price < open_price:
-        color = "red"
-    else:
-        color = "doji"
-
-    # তোমার ১ নম্বর ছবির সিরিয়াল অনুযায়ী সাজানো
-    candle = OrderedDict([
-        ("id", str(item.get("id"))),
-        ("pair", pair),
-        ("timeframe", item.get("timeframe", "M1")),
-        ("candle_time", item.get("candle_time")),
-        ("open", str(item.get("open"))),
-        ("high", str(item.get("high"))),
-        ("low", str(item.get("low"))),
-        ("close", str(item.get("close"))),
-        ("volume", str(item.get("volume"))),
-        ("color", color),
-        ("created_at", item.get("created_at"))
-    ])
-    return candle
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://qxbroker.com/"
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        candles = response.json()
+        
+        formatted_list = []
+        for i, candle in enumerate(candles):
+            # কালার লজিক
+            open_p = candle['open']
+            close_p = candle['close']
+            color = "green" if close_p > open_p else "red" if close_p < open_p else "doji"
+            
+            c_time = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(candle['time']))
+            
+            item = OrderedDict([
+                ("id", str(i + 1)),
+                ("pair", pair),
+                ("timeframe", "M1"),
+                ("candle_time", c_time),
+                ("open", str(open_p)),
+                ("high", str(candle['high'])),
+                ("low", str(candle['low'])),
+                ("close", str(close_p)),
+                ("volume", str(candle.get('volume', 0))),
+                ("color", color),
+                ("created_at", c_time)
+            ])
+            formatted_list.append(item)
+        return formatted_list
+    except:
+        return []
 
 @app.route('/')
-def get_quotex_data():
+def main_api():
     pair = request.args.get('pair')
     count = request.args.get('count', default=10, type=int)
 
     if not pair:
-        return jsonify({
-            "status": "error",
-            "message": "Please provide a pair. Example: /?pair=USDBDT_otc&count=10",
-            "Owner": "DARK-X-RAYHAN"
-        })
+        return jsonify({"Owner": "DARK-X-RAYHAN", "message": "Provide a pair name."})
 
-    try:
-        # সোর্স থেকে ডাটা আনা
-        source_url = f"https://mrbeaxt.site/Qx/Qx.php?pair={pair}&count={count}"
-        response = requests.get(source_url, timeout=10)
-        source_data = response.json()
-
-        final_data = []
-        if "data" in source_data:
-            for item in source_data["data"]:
-                formatted_item = format_candle(item, pair)
-                final_data.append(formatted_item)
-
-        # ফাইনাল আউটপুট সাজানো
-        output = OrderedDict([
-            ("Owner_Developer", "DARK-X-RAYHAN"),
-            ("Telegram", "@mdrayhan85"),
-            ("Channel", "https://t.me/mdrayhan85"),
-            ("success", True),
-            ("count", len(final_data)),
-            ("data", final_data)
-        ])
-
-        return jsonify(output)
-
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    data = get_realtime_candles(pair, count)
+    
+    output = OrderedDict([
+        ("Owner_Developer", "DARK-X-RAYHAN"),
+        ("Telegram", "@mdrayhan85"),
+        ("Channel", "https://t.me/mdrayhan85"),
+        ("success", True if data else False),
+        ("count", len(data)),
+        ("data", data)
+    ])
+    
+    return jsonify(output)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
