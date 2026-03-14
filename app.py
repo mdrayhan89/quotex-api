@@ -1,68 +1,76 @@
-import cloudscraper
-import time
+import requests
 from flask import Flask, jsonify, request
 from collections import OrderedDict
 
-app = Flask(__name__)
+app = Flask(name)
 
-# কোটেক্স বাইপাস করার জন্য বিশেষ স্ক্র্যাপার
-scraper = cloudscraper.create_scraper(
-    browser={
-        'browser': 'chrome',
-        'platform': 'windows',
-        'desktop': True
-    }
-)
+# JSON কি-গুলোর সিরিয়াল ঠিক রাখার জন্য এই ফাংশন
+def format_candle(item, pair):
+    # কালার লজিক ঠিক করা
+    open_price = float(item.get("open", 0))
+    close_price = float(item.get("close", 0))
+    
+    if close_price > open_price:
+        color = "green"
+    elif close_price < open_price:
+        color = "red"
+    else:
+        color = "doji"
+
+    # তোমার ১ নম্বর ছবির সিরিয়াল অনুযায়ী সাজানো
+    candle = OrderedDict([
+        ("id", str(item.get("id"))),
+        ("pair", pair),
+        ("timeframe", item.get("timeframe", "M1")),
+        ("candle_time", item.get("candle_time")),
+        ("open", str(item.get("open"))),
+        ("high", str(item.get("high"))),
+        ("low", str(item.get("low"))),
+        ("close", str(item.get("close"))),
+        ("volume", str(item.get("volume"))),
+        ("color", color),
+        ("created_at", item.get("created_at"))
+    ])
+    return candle
 
 @app.route('/')
-def main_api():
-    # সরাসরি কোটেক্সের ডাটাবেজ থেকে ডাটা আনার চেষ্টা
-    pair = request.args.get('pair', default='USDBDT_otc')
+def get_quotex_data():
+    pair = request.args.get('pair')
     count = request.args.get('count', default=10, type=int)
-    
-    symbol = pair.split('_')[0].upper()
-    # আমরা সরাসরি এই লিঙ্কটি ব্যবহার করব যা ব্লক হওয়ার সম্ভাবনা কম
-    url = f"https://qxbroker.com/api/v1/candles?pair={symbol}&count={count}&timeframe=60"
+
+    if not pair:
+        return jsonify({
+            "status": "error",
+            "message": "Please provide a pair. Example: /?pair=USDBDT_otc&count=10",
+            "Owner": "DARK-X-RAYHAN"
+        })
 
     try:
-        response = scraper.get(url, timeout=25)
-        
-        if response.status_code != 200:
-            return jsonify({
-                "Owner": "DARK-X-RAYHAN",
-                "success": False, 
-                "error": f"Status Code: {response.status_code}",
-                "note": "Please try again after 1 minute"
-            })
-            
-        candles = response.json()
+        # সোর্স থেকে ডাটা আনা
+        source_url = f"https://mrbeaxt.site/Qx/Qx.php?pair={pair}&count={count}"
+        response = requests.get(source_url, timeout=10)
+        source_data = response.json()
+
         final_data = []
+        if "data" in source_data:
+            for item in source_data["data"]:
+                formatted_item = format_candle(item, pair)
+                final_data.append(formatted_item)
 
-        if isinstance(candles, list):
-            for i, c in enumerate(candles):
-                o, cl = float(c['open']), float(c['close'])
-                color = "green" if cl > o else "red" if cl < o else "doji"
-                
-                item = OrderedDict([
-                    ("id", str(i + 1)),
-                    ("pair", pair),
-                    ("open", str(o)),
-                    ("high", str(c['high'])),
-                    ("low", str(c['low'])),
-                    ("close", str(cl)),
-                    ("color", color),
-                    ("time", time.strftime('%H:%M:%S', time.gmtime(c['time'])))
-                ])
-                final_data.append(item)
-
-        return jsonify(OrderedDict([
+        # ফাইনাল আউটপুট সাজানো
+        output = OrderedDict([
             ("Owner_Developer", "DARK-X-RAYHAN"),
-            ("success": True),
+            ("Telegram", "@mdrayhan85"),
+            ("Channel", "https://t.me/mdrayhan85"),
+            ("success", True),
+            ("count", len(final_data)),
             ("data", final_data)
-        ]))
+        ])
+
+        return jsonify(output)
 
     except Exception as e:
-        return jsonify({"success": False, "error": "Server is busy", "details": str(e)})
+        return jsonify({"success": False, "error": str(e)})
 
-if __name__ == '__main__':
+if name == 'main':
     app.run(host='0.0.0.0', port=5000)
