@@ -1,4 +1,5 @@
 flask
 requests
 cloudscraper
+websocket-client
 gunicorn
